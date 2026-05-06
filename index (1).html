@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ESP32 Monitor — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg:       #0d0f14;
+  --bg2:      #13161e;
+  --bg3:      #1a1e2a;
+  --border:   #252b3b;
+  --accent:   #4ade80;
+  --accent2:  #38bdf8;
+  --accent3:  #fb923c;
+  --accent4:  #a78bfa;
+  --danger:   #f87171;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --mono:     'Space Mono', monospace;
+  --sans:     'DM Sans', sans-serif;
+  --radius:   12px;
+  --shadow:   0 4px 24px rgba(0,0,0,0.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── Layout ─────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo { font-family: var(--mono); font-size: 17px; color: var(--accent); letter-spacing: -0.5px; }
+.logo span { color: var(--muted); font-size: 12px; display: block; font-weight: 400; }
+.hdr-right { display: flex; gap: 12px; align-items: center; }
+.pill-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.pill-status.online { color: var(--accent); border-color: rgba(74,222,128,0.3); }
+
+main { max-width: 1280px; margin: 0 auto; padding: 24px 20px 60px; }
+
+/* ── Section title ──────────────────── */
+.section-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Grid layouts ───────────────────── */
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+@media (max-width: 900px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .grid-4, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ── Card ───────────────────────────── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.card-sm { padding: 16px; }
+
+/* ── Metric card ────────────────────── */
+.metric { position: relative; overflow: hidden; }
+.metric::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent-line, var(--accent));
+}
+.metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.metric-value { font-family: var(--mono); font-size: 32px; font-weight: 700; line-height: 1; }
+.metric-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+/* ── Load card ──────────────────────── */
+.load-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.load-indicator {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  transition: background .3s, box-shadow .3s;
+}
+.load-indicator.on {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(74,222,128,0.6);
+}
+.load-indicator.b3.on { background: var(--accent3); box-shadow: 0 0 10px rgba(251,146,60,0.6); }
+.load-indicator.b4.on { background: var(--accent2); box-shadow: 0 0 10px rgba(56,189,248,0.6); }
+.load-info { flex: 1; }
+.load-name { font-weight: 600; font-size: 14px; }
+.load-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.load-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg3);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.load-badge.on { background: rgba(74,222,128,0.1); color: var(--accent); border-color: rgba(74,222,128,0.3); }
+.load-badge.on.b3 { background: rgba(251,146,60,0.1); color: var(--accent3); border-color: rgba(251,146,60,0.3); }
+.load-badge.on.b4 { background: rgba(56,189,248,0.1); color: var(--accent2); border-color: rgba(56,189,248,0.3); }
+
+/* ── Control buttons ────────────────── */
+.btn {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg3);
+  color: var(--text);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.start { background: rgba(74,222,128,0.1); border-color: rgba(74,222,128,0.4); color: var(--accent); }
+.btn.stop  { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.4); color: var(--danger); }
+.btn.dl    { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.4); color: var(--accent2); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+/* ── Settings form ──────────────────── */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.field label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.field input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color .2s;
+}
+.field input:focus { border-color: var(--accent2); }
+
+/* ── Chart ──────────────────────────── */
+.chart-wrap { position: relative; height: 220px; }
+
+/* ── Table ──────────────────────────── */
+.tbl-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg3);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+tbody tr { border-bottom: 1px solid rgba(37,43,59,0.5); }
+tbody tr:hover { background: rgba(255,255,255,0.02); }
+tbody td { padding: 9px 12px; font-family: var(--mono); font-size: 12px; }
+.td-on  { color: var(--accent); }
+.td-off { color: var(--muted); }
+
+/* ── Timer bar ──────────────────────── */
+.timer-bar-wrap { background: var(--bg3); border-radius: 6px; height: 6px; overflow: hidden; margin-top: 10px; }
+.timer-bar { height: 100%; background: var(--accent3); border-radius: 6px; transition: width .5s; width: 0%; }
+
+/* ── Spreadsheet link ───────────────── */
+.sheet-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color .2s;
+  margin-top: 14px;
+}
+.sheet-link:hover { border-color: var(--accent); }
+.sheet-icon { font-size: 22px; }
+
+/* ── Notice / Toast ─────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 13px;
+  font-family: var(--mono);
+  opacity: 0;
+  transition: opacity .3s;
+  pointer-events: none;
+  z-index: 999;
+}
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    ESP32 MONITOR
+    <span>Environmental Control Dashboard</span>
+  </div>
+  <div class="hdr-right">
+    <div class="pill-status" id="conn-pill">● OFFLINE</div>
+    <div class="pill-status" id="time-pill">--:--:--</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── SENSOR METRICS ─────────────────────────────────── -->
+  <div class="section-title" style="margin-top:8px">📡 Data Sensor</div>
+  <div class="grid-4">
+    <div class="card metric" style="--accent-line:var(--accent3)">
+      <div class="metric-label">DHT1 Suhu (Bawah)</div>
+      <div class="metric-value" id="t1">--</div>
+      <div class="metric-sub">°C · dekat Beban 3</div>
+    </div>
+    <div class="card metric" style="--accent-line:var(--accent2)">
+      <div class="metric-label">DHT1 Kelembaban</div>
+      <div class="metric-value" id="h1">--</div>
+      <div class="metric-sub">% RH</div>
+    </div>
+    <div class="card metric" style="--accent-line:var(--accent4)">
+      <div class="metric-label">DHT2 Suhu (Atas)</div>
+      <div class="metric-value" id="t2">--</div>
+      <div class="metric-sub">°C · dekat Beban 4</div>
+    </div>
+    <div class="card metric">
+      <div class="metric-label">DHT2 Kelembaban</div>
+      <div class="metric-value" id="h2">--</div>
+      <div class="metric-sub">% RH</div>
+    </div>
+  </div>
+
+  <!-- ── STATUS BEBAN ───────────────────────────────────── -->
+  <div class="section-title">⚡ Status Beban</div>
+  <div class="grid-4" style="margin-bottom:24px">
+
+    <div class="card card-sm load-card">
+      <div class="load-indicator" id="ind-b1"></div>
+      <div class="load-info">
+        <div class="load-name">Beban 1</div>
+        <div class="load-desc">Relay 1 Ch1 · Kelembaban</div>
+      </div>
+      <div class="load-badge" id="badge-b1">OFF</div>
+    </div>
+
+    <div class="card card-sm load-card">
+      <div class="load-indicator" id="ind-b2"></div>
+      <div class="load-info">
+        <div class="load-name">Beban 2</div>
+        <div class="load-desc">Relay 1 Ch2 · Kelembaban</div>
+      </div>
+      <div class="load-badge" id="badge-b2">OFF</div>
+    </div>
+
+    <div class="card card-sm load-card">
+      <div class="load-indicator b3" id="ind-b3"></div>
+      <div class="load-info">
+        <div class="load-name">Beban 3</div>
+        <div class="load-desc">Relay 2 Ch3 · Suhu + Timer</div>
+      </div>
+      <div class="load-badge b3" id="badge-b3">OFF</div>
+    </div>
+
+    <div class="card card-sm load-card">
+      <div class="load-indicator b4" id="ind-b4"></div>
+      <div class="load-info">
+        <div class="load-name">Beban 4</div>
+        <div class="load-desc">Relay 2 Ch4 · Timer saja</div>
+      </div>
+      <div class="load-badge b4" id="badge-b4">OFF</div>
+    </div>
+  </div>
+
+  <!-- ── TIMER INFO ─────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:24px; padding:18px 20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="metric-label">Timer Beban 3 & 4</div>
+        <div style="font-family:var(--mono);font-size:20px" id="timer-txt">Sisa: --</div>
+      </div>
+      <div style="text-align:right">
+        <div class="metric-label">Fase</div>
+        <div style="font-family:var(--mono);font-size:14px" id="timer-phase">--</div>
+      </div>
+    </div>
+    <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar"></div></div>
+  </div>
+
+  <!-- ── GRAFIK ─────────────────────────────────────────── -->
+  <div class="section-title">📊 Grafik</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="metric-label" style="margin-bottom:12px">Suhu DHT1 & DHT2 (°C)</div>
+      <div class="chart-wrap"><canvas id="chartTemp"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="metric-label" style="margin-bottom:12px">Kelembaban DHT1 & DHT2 (%)</div>
+      <div class="chart-wrap"><canvas id="chartHum"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── KONTROL ────────────────────────────────────────── -->
+  <div class="section-title">🎛️ Kontrol Sistem</div>
+  <div class="card" style="margin-bottom:24px">
+    <div style="font-size:14px;color:var(--muted);margin-bottom:4px">Status sistem:</div>
+    <div style="font-family:var(--mono);font-size:18px" id="sys-status">--</div>
+    <div class="btn-row">
+      <button class="btn start" onclick="controlSystem(true)">▶ START</button>
+      <button class="btn stop"  onclick="controlSystem(false)">■ STOP</button>
+      <button class="btn dl"    onclick="downloadExcel()">⬇ Excel (SD)</button>
+      <button class="btn dl"    onclick="exportLocalExcel()">⬇ Excel (Browser)</button>
+      <button class="btn"       onclick="copySheetUrl()">📋 Copy Sheet Link</button>
+    </div>
+    <a href="GANTI_URL_GOOGLE_SHEET_ANDA" target="_blank" id="sheet-link" class="sheet-link">
+      <span class="sheet-icon">📊</span>
+      <div>
+        <div style="font-weight:600">Google Spreadsheet Online</div>
+        <div style="font-size:12px;color:var(--muted)">Klik untuk membuka data online di Google Sheets</div>
+      </div>
+    </a>
+  </div>
+
+  <!-- ── PENGATURAN ─────────────────────────────────────── -->
+  <div class="section-title">⚙️ Pengaturan</div>
+  <div class="card" style="margin-bottom:24px">
+    <div class="form-grid">
+      <div class="field">
+        <label>Kelembaban ON di bawah (%)</label>
+        <input type="number" id="cfg-humOn" value="80" step="1"/>
+      </div>
+      <div class="field">
+        <label>Kelembaban OFF di (%)</label>
+        <input type="number" id="cfg-humOff" value="90" step="1"/>
+      </div>
+      <div class="field">
+        <label>Suhu ON di atas (°C)</label>
+        <input type="number" id="cfg-tempOn" value="24" step="0.5"/>
+      </div>
+      <div class="field">
+        <label>Suhu OFF di (°C)</label>
+        <input type="number" id="cfg-tempOff" value="23" step="0.5"/>
+      </div>
+      <div class="field">
+        <label>Interval Log (detik)</label>
+        <input type="number" id="cfg-logInt" value="60" step="10"/>
+      </div>
+      <div class="field">
+        <label>Interval Timer (detik)</label>
+        <input type="number" id="cfg-timerInt" value="3600" step="60"/>
+      </div>
+      <div class="field">
+        <label>Durasi Timer ON (detik)</label>
+        <input type="number" id="cfg-timerDur" value="300" step="30"/>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn start" onclick="saveSettings()">💾 Simpan Pengaturan</button>
+      <button class="btn"       onclick="loadSettings()">🔄 Muat dari ESP32</button>
+    </div>
+  </div>
+
+  <!-- ── TABEL DATA ─────────────────────────────────────── -->
+  <div class="section-title">📋 Tabel Data Riwayat</div>
+  <div class="card" style="margin-bottom:24px">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>T1 (°C)</th>
+            <th>H1 (%)</th>
+            <th>T2 (°C)</th>
+            <th>H2 (%)</th>
+            <th>B1</th><th>B2</th><th>B3</th><th>B4</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body">
+          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Menunggu data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────
+const ESP32_IP  = 'http://192.168.1.XXX';  // ← GANTI dengan IP ESP32 Anda
+const REFRESH   = 3000;  // ms poll interval
+const SHEET_URL = 'GANTI_URL_GOOGLE_SHEET_ANDA';  // ← GANTI
+
+// ── State ─────────────────────────────────────────────────────────────
+let history = [];
+let tempChart, humChart;
+let timerMax = 3600;
+
+// ── Charts ────────────────────────────────────────────────────────────
+function mkChart(id, label1, label2, col1, col2) {
+  const ctx = document.getElementById(id);
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: label1, data: [], borderColor: col1, backgroundColor: col1+'22',
+          tension: 0.4, pointRadius: 2, borderWidth: 2, fill: true },
+        { label: label2, data: [], borderColor: col2, backgroundColor: col2+'22',
+          tension: 0.4, pointRadius: 2, borderWidth: 2, fill: true },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      scales: {
+        x: { ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 },
+             grid: { color: '#1a1e2a' } },
+        y: { ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } },
+             grid: { color: '#1a1e2a' } }
+      },
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { family: 'DM Sans' }, boxWidth: 12 } }
+      }
+    }
+  });
+}
+
+window.addEventListener('load', () => {
+  tempChart = mkChart('chartTemp', 'DHT1 Suhu', 'DHT2 Suhu', '#fb923c', '#a78bfa');
+  humChart  = mkChart('chartHum',  'DHT1 Hum',  'DHT2 Hum',  '#38bdf8', '#4ade80');
+  loadSettings();
+  pollStatus();
+  pollHistory();
+  setInterval(pollStatus, REFRESH);
+  setInterval(pollHistory, 10000);
+  setInterval(updateClock, 1000);
+});
+
+// ── Clock ─────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('time-pill').textContent =
+    new Date().toLocaleTimeString('id-ID');
+}
+
+// ── Poll Status ───────────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const r = await fetch(ESP32_IP + '/status', { signal: AbortSignal.timeout(2500) });
+    const d = await r.json();
+    updateStatus(d);
+    document.getElementById('conn-pill').textContent = '● ONLINE';
+    document.getElementById('conn-pill').className = 'pill-status online';
+  } catch(e) {
+    document.getElementById('conn-pill').textContent = '● OFFLINE';
+    document.getElementById('conn-pill').className = 'pill-status';
+  }
+}
+
+function updateStatus(d) {
+  // Sensor values
+  el('t1').textContent = d.dht1.t.toFixed(1);
+  el('h1').textContent = d.dht1.h.toFixed(1);
+  el('t2').textContent = d.dht2.t.toFixed(1);
+  el('h2').textContent = d.dht2.h.toFixed(1);
+
+  // Beban
+  setBeban('b1', d.beban1, false);
+  setBeban('b2', d.beban2, false);
+  setBeban('b3', d.beban3, true);
+  setBeban('b4', d.beban4, true);
+
+  // System status
+  el('sys-status').textContent = d.running ? '▶ BERJALAN' : '■ BERHENTI';
+  el('sys-status').style.color = d.running ? 'var(--accent)' : 'var(--danger)';
+
+  // Timer
+  const rem = d.timerRemaining;
+  const phase = d.timerOn ? 'AKTIF (ON)' : 'MENUNGGU';
+  el('timer-txt').textContent = `Sisa: ${fmtTime(rem)}`;
+  el('timer-phase').textContent = phase;
+  el('timer-phase').style.color = d.timerOn ? 'var(--accent3)' : 'var(--muted)';
+
+  // Timer bar
+  const maxSec = d.timerOn ? timerMax : (timerMax * 12); // approx 1hr
+  const pct = Math.min(100, 100 - (rem / Math.max(rem + 1, 300)) * 100);
+  el('timer-bar').style.width = pct + '%';
+}
+
+function setBeban(id, on, alt) {
+  const ind = el('ind-' + id);
+  const badge = el('badge-' + id);
+  ind.classList.toggle('on', on);
+  badge.classList.toggle('on', on);
+  badge.textContent = on ? 'ON' : 'OFF';
+}
+
+// ── Poll History ──────────────────────────────────────────────────────
+async function pollHistory() {
+  try {
+    const r = await fetch(ESP32_IP + '/history', { signal: AbortSignal.timeout(4000) });
+    const data = await r.json();
+    history = data;
+    updateTable(data);
+    updateCharts(data);
+    syncToSheet(data); // push ke Google Sheets jika dikonfigurasi
+  } catch(e) {}
+}
+
+function updateTable(data) {
+  const tbody = el('tbl-body');
+  if (!data.length) return;
+  tbody.innerHTML = data.slice(-50).reverse().map(r =>
+    `<tr>
+      <td>${r.ts}</td>
+      <td>${r.t1.toFixed(1)}</td>
+      <td>${r.h1.toFixed(1)}</td>
+      <td>${r.t2.toFixed(1)}</td>
+      <td>${r.h2.toFixed(1)}</td>
+      <td class="${r.b1?'td-on':'td-off'}">${r.b1?'ON':'OFF'}</td>
+      <td class="${r.b2?'td-on':'td-off'}">${r.b2?'ON':'OFF'}</td>
+      <td class="${r.b3?'td-on':'td-off'}">${r.b3?'ON':'OFF'}</td>
+      <td class="${r.b4?'td-on':'td-off'}">${r.b4?'ON':'OFF'}</td>
+    </tr>`
+  ).join('');
+}
+
+function updateCharts(data) {
+  const slice = data.slice(-30);
+  const labels = slice.map(r => r.ts.substring(11,16));
+  tempChart.data.labels = labels;
+  tempChart.data.datasets[0].data = slice.map(r => r.t1);
+  tempChart.data.datasets[1].data = slice.map(r => r.t2);
+  tempChart.update();
+  humChart.data.labels = labels;
+  humChart.data.datasets[0].data = slice.map(r => r.h1);
+  humChart.data.datasets[1].data = slice.map(r => r.h2);
+  humChart.update();
+}
+
+// ── Control ───────────────────────────────────────────────────────────
+async function controlSystem(run) {
+  try {
+    await fetch(ESP32_IP + '/control', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ run })
+    });
+    toast(run ? '▶ Sistem DIHIDUPKAN' : '■ Sistem DIHENTIKAN');
+    pollStatus();
+  } catch(e) { toast('⚠ Gagal terhubung ke ESP32'); }
+}
+
+// ── Settings ──────────────────────────────────────────────────────────
+async function saveSettings() {
+  const body = {
+    humOn:    +el('cfg-humOn').value,
+    humOff:   +el('cfg-humOff').value,
+    tempOn:   +el('cfg-tempOn').value,
+    tempOff:  +el('cfg-tempOff').value,
+    logInt:   +el('cfg-logInt').value,
+    timerInt: +el('cfg-timerInt').value,
+    timerDur: +el('cfg-timerDur').value,
+  };
+  timerMax = body.timerInt;
+  try {
+    await fetch(ESP32_IP + '/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    toast('✓ Pengaturan tersimpan ke ESP32');
+  } catch(e) { toast('⚠ Gagal menyimpan pengaturan'); }
+}
+
+async function loadSettings() {
+  try {
+    const r = await fetch(ESP32_IP + '/settings');
+    const d = await r.json();
+    el('cfg-humOn').value   = d.humOn;
+    el('cfg-humOff').value  = d.humOff;
+    el('cfg-tempOn').value  = d.tempOn;
+    el('cfg-tempOff').value = d.tempOff;
+    el('cfg-logInt').value  = d.logInt;
+    el('cfg-timerInt').value= d.timerInt;
+    el('cfg-timerDur').value= d.timerDur;
+    timerMax = d.timerInt;
+    toast('✓ Pengaturan dimuat dari ESP32');
+  } catch(e) {}
+}
+
+// ── Download Excel (dari SD Card) ─────────────────────────────────────
+function downloadExcel() {
+  window.open(ESP32_IP + '/download', '_blank');
+}
+
+// ── Export Excel (dari data di browser) ──────────────────────────────
+function exportLocalExcel() {
+  if (!history.length) { toast('⚠ Belum ada data untuk diekspor'); return; }
+  const ws_data = [
+    ['Timestamp','Suhu1(°C)','Hum1(%)','Suhu2(°C)','Hum2(%)','Beban1','Beban2','Beban3','Beban4'],
+    ...history.map(r => [r.ts, r.t1, r.h1, r.t2, r.h2,
+      r.b1?'ON':'OFF', r.b2?'ON':'OFF', r.b3?'ON':'OFF', r.b4?'ON':'OFF'])
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  // Style header
+  ws['!cols'] = [{wch:20},{wch:12},{wch:10},{wch:12},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Data Sensor');
+  XLSX.writeFile(wb, `esp32_data_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('✓ File Excel berhasil diunduh');
+}
+
+// ── Google Sheets Sync ────────────────────────────────────────────────
+// Kirim data terbaru ke Google Apps Script Web App
+const APPS_SCRIPT_URL = 'GANTI_APPS_SCRIPT_URL'; // ← lihat panduan Google Sheets
+let lastSyncCount = 0;
+async function syncToSheet(data) {
+  if (data.length <= lastSyncCount || APPS_SCRIPT_URL.includes('GANTI')) return;
+  const newRows = data.slice(lastSyncCount);
+  lastSyncCount = data.length;
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ rows: newRows }),
+      mode: 'no-cors'
+    });
+  } catch(e) {}
+}
+
+function copySheetUrl() {
+  navigator.clipboard.writeText(SHEET_URL).then(() => toast('✓ Link Google Sheet disalin'));
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+function el(id) { return document.getElementById(id); }
+function fmtTime(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return [h,m,sec].map(x=>String(x).padStart(2,'0')).join(':');
+}
+let toastTimer;
+function toast(msg) {
+  const t = el('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
